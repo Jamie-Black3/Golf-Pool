@@ -2,7 +2,10 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { submitPicks } from "../../actions";
 
-type Golfer = { id: string; name: string; odds_rank: number | null };
+type Assignment = {
+  tier_number: number;
+  golf_players: { id: string; name: string } | null;
+};
 
 export default async function PickPage({
   params,
@@ -22,12 +25,11 @@ export default async function PickPage({
 
   const { data: pool } = await supabase
     .from("pools")
-    .select("id, name, tournament_id, picks_per_entry, tournaments(name)")
+    .select("id, name, picks_per_entry, tournaments(name)")
     .eq("id", poolId)
     .single<{
       id: string;
       name: string;
-      tournament_id: string;
       picks_per_entry: number;
       tournaments: { name: string } | null;
     }>();
@@ -43,19 +45,12 @@ export default async function PickPage({
 
   if (!entry) redirect(`/pools/${poolId}`);
 
-  const { data: poolTiers } = await supabase
-    .from("pool_tiers")
-    .select("tier_number, tier_size")
+  const { data: assignments } = await supabase
+    .from("pool_tier_assignments")
+    .select("tier_number, golf_players(id, name)")
     .eq("pool_id", poolId)
     .order("tier_number")
-    .returns<{ tier_number: number; tier_size: number }[]>();
-
-  const { data: golfers } = await supabase
-    .from("golf_players")
-    .select("id, name, odds_rank")
-    .eq("tournament_id", pool.tournament_id)
-    .order("odds_rank", { ascending: true, nullsFirst: false })
-    .returns<Golfer[]>();
+    .returns<Assignment[]>();
 
   const { data: existingPicks } = await supabase
     .from("entry_picks")
@@ -65,15 +60,14 @@ export default async function PickPage({
 
   const selectedIds = new Set((existingPicks ?? []).map((p) => p.golf_player_id));
 
-  const tierGroups: { tierNumber: number; golfers: Golfer[] }[] = [];
-  let cursor = 0;
-  for (const t of poolTiers ?? []) {
-    tierGroups.push({
-      tierNumber: t.tier_number,
-      golfers: (golfers ?? []).slice(cursor, cursor + t.tier_size),
-    });
-    cursor += t.tier_size;
+  const tierGroups = new Map<number, { id: string; name: string }[]>();
+  for (const a of assignments ?? []) {
+    if (!a.golf_players) continue;
+    const list = tierGroups.get(a.tier_number) ?? [];
+    list.push(a.golf_players);
+    tierGroups.set(a.tier_number, list);
   }
+  const sortedTierNumbers = [...tierGroups.keys()].sort((a, b) => a - b);
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-12">
@@ -100,40 +94,43 @@ export default async function PickPage({
         <input type="hidden" name="entryId" value={entry.id} />
         <input type="hidden" name="poolId" value={poolId} />
 
-        {tierGroups.map(({ tierNumber, golfers: tierGolfers }) => (
-          <div key={tierNumber}>
-            <h2 className="mb-2 text-sm font-medium text-zinc-500">
-              Tier {tierNumber}
-            </h2>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <label className="flex items-center gap-2 rounded-md border border-dashed border-zinc-300 px-3 py-2 text-sm text-zinc-400 has-checked:border-zinc-900 has-checked:text-zinc-900 dark:border-zinc-700 dark:has-checked:border-zinc-50 dark:has-checked:text-zinc-50">
-                <input
-                  type="radio"
-                  name={`tier-${tierNumber}`}
-                  value=""
-                  defaultChecked={
-                    !tierGolfers.some((g) => selectedIds.has(g.id))
-                  }
-                />
-                No pick from this tier
-              </label>
-              {tierGolfers.map((golfer) => (
-                <label
-                  key={golfer.id}
-                  className="flex items-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm has-checked:border-zinc-900 has-checked:bg-zinc-50 dark:border-zinc-800 dark:has-checked:border-zinc-50 dark:has-checked:bg-zinc-900"
-                >
+        {sortedTierNumbers.map((tierNumber) => {
+          const tierGolfers = tierGroups.get(tierNumber) ?? [];
+          return (
+            <div key={tierNumber}>
+              <h2 className="mb-2 text-sm font-medium text-zinc-500">
+                Tier {tierNumber}
+              </h2>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="flex items-center gap-2 rounded-md border border-dashed border-zinc-300 px-3 py-2 text-sm text-zinc-400 has-checked:border-zinc-900 has-checked:text-zinc-900 dark:border-zinc-700 dark:has-checked:border-zinc-50 dark:has-checked:text-zinc-50">
                   <input
                     type="radio"
                     name={`tier-${tierNumber}`}
-                    value={golfer.id}
-                    defaultChecked={selectedIds.has(golfer.id)}
+                    value=""
+                    defaultChecked={
+                      !tierGolfers.some((g) => selectedIds.has(g.id))
+                    }
                   />
-                  {golfer.name}
+                  No pick from this tier
                 </label>
-              ))}
+                {tierGolfers.map((golfer) => (
+                  <label
+                    key={golfer.id}
+                    className="flex items-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm has-checked:border-zinc-900 has-checked:bg-zinc-50 dark:border-zinc-800 dark:has-checked:border-zinc-50 dark:has-checked:bg-zinc-900"
+                  >
+                    <input
+                      type="radio"
+                      name={`tier-${tierNumber}`}
+                      value={golfer.id}
+                      defaultChecked={selectedIds.has(golfer.id)}
+                    />
+                    {golfer.name}
+                  </label>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         <button
           type="submit"

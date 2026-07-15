@@ -2,6 +2,41 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+async function regenerateAssignments(
+  supabase: SupabaseClient,
+  poolId: string,
+  tournamentId: string
+) {
+  const { data: tiers } = await supabase
+    .from("pool_tiers")
+    .select("tier_number, tier_size")
+    .eq("pool_id", poolId)
+    .order("tier_number")
+    .returns<{ tier_number: number; tier_size: number }[]>();
+
+  const { data: golfers } = await supabase
+    .from("golf_players")
+    .select("id")
+    .eq("tournament_id", tournamentId)
+    .order("odds_rank", { ascending: true, nullsFirst: false })
+    .returns<{ id: string }[]>();
+
+  const assignments: { pool_id: string; golf_player_id: string; tier_number: number }[] = [];
+  let cursor = 0;
+  for (const t of tiers ?? []) {
+    for (const g of (golfers ?? []).slice(cursor, cursor + t.tier_size)) {
+      assignments.push({ pool_id: poolId, golf_player_id: g.id, tier_number: t.tier_number });
+    }
+    cursor += t.tier_size;
+  }
+
+  await supabase.from("pool_tier_assignments").delete().eq("pool_id", poolId);
+  if (assignments.length > 0) {
+    await supabase.from("pool_tier_assignments").insert(assignments);
+  }
+}
 
 export async function createPool(formData: FormData) {
   const supabase = await createClient();
@@ -53,6 +88,7 @@ export async function createPool(formData: FormData) {
   }));
 
   await supabase.from("pool_tiers").insert(tierRows);
+  await regenerateAssignments(supabase, pool.id, tournamentId);
 
   redirect(`/pools/${pool.id}/tiers`);
 }
@@ -66,6 +102,13 @@ export async function updateTiers(formData: FormData) {
 
   const poolId = formData.get("poolId") as string;
 
+  const { data: pool } = await supabase
+    .from("pools")
+    .select("tournament_id")
+    .eq("id", poolId)
+    .single<{ tournament_id: string }>();
+  if (!pool) redirect("/");
+
   const tierKeys = [...formData.keys()].filter((k) => k.startsWith("size-"));
   for (const key of tierKeys) {
     const tierNumber = parseInt(key.replace("size-", ""), 10);
@@ -76,6 +119,8 @@ export async function updateTiers(formData: FormData) {
       .eq("pool_id", poolId)
       .eq("tier_number", tierNumber);
   }
+
+  await regenerateAssignments(supabase, poolId, pool.tournament_id);
 
   redirect(`/pools/${poolId}`);
 }

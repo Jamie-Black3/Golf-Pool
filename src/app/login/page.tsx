@@ -1,4 +1,5 @@
 import { signIn, signUp } from "./actions";
+import { SubmitButton } from "./SubmitButton";
 
 export default async function LoginPage({
   searchParams,
@@ -43,13 +44,25 @@ export default async function LoginPage({
           </div>
 
           <div className="mt-2 flex gap-3">
-            <button formAction={signIn} className="btn btn-primary flex-1">
-              Sign in
-            </button>
-            <button formAction={signUp} className="btn btn-secondary flex-1">
-              Sign up
-            </button>
+            <SubmitButton
+              formAction={signIn}
+              intent="signin"
+              idleLabel="Sign in"
+              pendingLabel="Signing in…"
+              className="btn btn-primary flex-1"
+            />
+            <SubmitButton
+              formAction={signUp}
+              intent="signup"
+              idleLabel="Sign up"
+              pendingLabel="Creating account…"
+              className="btn btn-secondary flex-1"
+            />
           </div>
+          <p className="mt-1 text-center text-xs text-muted">
+            New here? Enter an account name, email, and password, then tap Sign up —
+            you&apos;ll be signed in automatically.
+          </p>
         </form>
       </div>
     </div>

@@ -48,34 +48,30 @@ export default async function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
-          <Link href="/" className="font-semibold text-zinc-950 dark:text-zinc-50">
+        <header
+          className="sticky top-0 z-10 flex items-center justify-between border-b px-5 py-3.5 backdrop-blur"
+          style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--background) 80%, transparent)" }}
+        >
+          <Link href="/" className="flex items-center gap-2 font-semibold text-foreground">
+            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent text-sm">⛳</span>
             Golf Pool
           </Link>
           {user ? (
-            <div className="flex items-center gap-3 text-sm">
+            <div className="flex items-center gap-4 text-sm">
               {isAdmin && (
-                <Link
-                  href="/admin"
-                  className="text-zinc-500 underline hover:text-zinc-900 dark:hover:text-zinc-100"
-                >
+                <Link href="/admin" className="text-muted transition-colors hover:text-foreground">
                   Admin
                 </Link>
               )}
-              <span className="text-zinc-600 dark:text-zinc-400">
-                {accountName}
-              </span>
+              <span className="hidden text-muted sm:inline">{accountName}</span>
               <form action={signOut}>
-                <button className="text-zinc-500 underline hover:text-zinc-900 dark:hover:text-zinc-100">
+                <button className="text-muted transition-colors hover:text-foreground">
                   Sign out
                 </button>
               </form>
             </div>
           ) : (
-            <Link
-              href="/login"
-              className="text-sm font-medium text-zinc-900 underline dark:text-zinc-50"
-            >
+            <Link href="/login" className="text-sm font-medium text-accent">
               Sign in
             </Link>
           )}

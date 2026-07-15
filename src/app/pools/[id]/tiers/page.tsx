@@ -1,13 +1,17 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { updateTiers } from "../../actions";
+import { BackLink, PageHeader } from "@/components/ui";
+import { TierConfigForm } from "./TierConfigForm";
 
 export default async function TiersPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { id: poolId } = await params;
+  const { error } = await searchParams;
   const supabase = await createClient();
 
   const {
@@ -37,64 +41,36 @@ export default async function TiersPage({
 
   const { data: tiers } = await supabase
     .from("pool_tiers")
-    .select("tier_number, tier_size")
+    .select("tier_number, tier_size, picks_allowed")
     .eq("pool_id", poolId)
     .order("tier_number")
-    .returns<{ tier_number: number; tier_size: number }[]>();
-
-  const total = fieldSize ?? 0;
-  const assigned = (tiers ?? []).reduce((sum, t) => sum + t.tier_size, 0);
+    .returns<{ tier_number: number; tier_size: number; picks_allowed: number }[]>();
 
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-6 px-4 py-12">
-      <div>
-        <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
-          Set up tiers
-        </h1>
-        <p className="text-sm text-zinc-500">
-          {pool.name} &middot; {pool.tournaments?.name} &middot; {total} golfers in field
-        </p>
-      </div>
+    <div className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-6 px-4 py-10">
+      <BackLink href={`/pools/${poolId}`}>Back to pool</BackLink>
+      <PageHeader
+        title="Set up tiers"
+        subtitle={`${pool.name} · ${pool.tournaments?.name}`}
+      />
 
-      <p className="text-sm text-zinc-500">
-        Tier 1 gets the golfers with the best odds to win, working down from
-        there. Adjust how many golfers fall in each tier (must add up to{" "}
-        {total}).
+      <p className="hint">
+        Golfers are ordered by betting odds — Tier 1 holds the favorites. Set how
+        many golfers land in each tier and how many an entrant drafts from it. You
+        can hand-move individual golfers later from the admin page.
       </p>
 
-      <form action={updateTiers} className="flex flex-col gap-3">
-        <input type="hidden" name="poolId" value={poolId} />
-        {(tiers ?? []).map((tier) => (
-          <div key={tier.tier_number} className="flex items-center gap-3">
-            <label className="w-16 text-sm text-zinc-700 dark:text-zinc-300">
-              Tier {tier.tier_number}
-            </label>
-            <input
-              name={`size-${tier.tier_number}`}
-              type="number"
-              min={0}
-              defaultValue={tier.tier_size}
-              className="w-24 rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-            />
-            <span className="text-sm text-zinc-500">golfers</span>
-          </div>
-        ))}
-
-        <p
-          className={`text-sm ${
-            assigned === total ? "text-zinc-500" : "text-amber-600 dark:text-amber-400"
-          }`}
-        >
-          {assigned} / {total} golfers assigned
+      {error && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-400">
+          {error}
         </p>
+      )}
 
-        <button
-          type="submit"
-          className="mt-2 w-fit rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          Save tiers &amp; open pool
-        </button>
-      </form>
+      <TierConfigForm
+        poolId={poolId}
+        fieldSize={fieldSize ?? 0}
+        initialTiers={tiers ?? []}
+      />
     </div>
   );
 }

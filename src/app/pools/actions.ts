@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+const MAX_PICKS = 15;
+
 async function regenerateAssignments(
   supabase: SupabaseClient,
   poolId: string,
@@ -46,12 +48,12 @@ export async function createPool(formData: FormData) {
   if (!user) redirect("/login");
 
   const tournamentId = formData.get("tournamentId") as string;
-  const name = formData.get("name") as string;
-  const tierCount = Math.max(1, parseInt(formData.get("tierCount") as string, 10) || 4);
-  const picksPerEntry = Math.min(
-    tierCount,
-    Math.max(1, parseInt(formData.get("picksPerEntry") as string, 10) || tierCount)
-  );
+  const name = ((formData.get("name") as string) || "").trim();
+  const tierCount = Math.min(15, Math.max(1, parseInt(formData.get("tierCount") as string, 10) || 4));
+
+  if (!name || !tournamentId) {
+    redirect(`/pools/new?error=${encodeURIComponent("Pool name and tournament are required")}`);
+  }
 
   const { count: fieldSize } = await supabase
     .from("golf_players")
@@ -60,6 +62,9 @@ export async function createPool(formData: FormData) {
 
   const total = fieldSize ?? 0;
 
+  // Default one pick per tier, but never exceed the total pick cap.
+  const defaultPicks = Math.min(tierCount, MAX_PICKS);
+
   const { data: pool, error } = await supabase
     .from("pools")
     .insert({
@@ -67,7 +72,7 @@ export async function createPool(formData: FormData) {
       name,
       owner_id: user.id,
       tier_count: tierCount,
-      picks_per_entry: picksPerEntry,
+      picks_per_entry: defaultPicks,
     })
     .select()
     .single();
@@ -78,13 +83,14 @@ export async function createPool(formData: FormData) {
     );
   }
 
-  // Default to an even split; the owner can rebalance sizes on the tiers page.
+  // Even odds-ordered split by default; one pick per tier (up to the cap).
   const baseSize = Math.floor(total / tierCount);
   const remainder = total % tierCount;
   const tierRows = Array.from({ length: tierCount }, (_, i) => ({
     pool_id: pool.id,
     tier_number: i + 1,
     tier_size: baseSize + (i < remainder ? 1 : 0),
+    picks_allowed: i < defaultPicks ? 1 : 0,
   }));
 
   await supabase.from("pool_tiers").insert(tierRows);
@@ -104,22 +110,46 @@ export async function updateTiers(formData: FormData) {
 
   const { data: pool } = await supabase
     .from("pools")
-    .select("tournament_id")
+    .select("tournament_id, owner_id")
     .eq("id", poolId)
-    .single<{ tournament_id: string }>();
+    .single<{ tournament_id: string; owner_id: string }>();
   if (!pool) redirect("/");
 
-  const tierKeys = [...formData.keys()].filter((k) => k.startsWith("size-"));
-  for (const key of tierKeys) {
-    const tierNumber = parseInt(key.replace("size-", ""), 10);
-    const tierSize = Math.max(0, parseInt(formData.get(key) as string, 10) || 0);
-    await supabase
-      .from("pool_tiers")
-      .update({ tier_size: tierSize })
-      .eq("pool_id", poolId)
-      .eq("tier_number", tierNumber);
+  const { data: tiers } = await supabase
+    .from("pool_tiers")
+    .select("tier_number")
+    .eq("pool_id", poolId)
+    .order("tier_number")
+    .returns<{ tier_number: number }[]>();
+
+  let totalPicks = 0;
+  const updates: { tier_number: number; tier_size: number; picks_allowed: number }[] = [];
+  for (const t of tiers ?? []) {
+    const size = Math.max(0, parseInt(formData.get(`size-${t.tier_number}`) as string, 10) || 0);
+    const picks = Math.max(0, parseInt(formData.get(`picks-${t.tier_number}`) as string, 10) || 0);
+    // Can't pick more golfers than the tier holds.
+    const clampedPicks = Math.min(picks, size);
+    totalPicks += clampedPicks;
+    updates.push({ tier_number: t.tier_number, tier_size: size, picks_allowed: clampedPicks });
   }
 
+  if (totalPicks > MAX_PICKS) {
+    redirect(
+      `/pools/${poolId}/tiers?error=${encodeURIComponent(
+        `Total picks (${totalPicks}) exceeds the ${MAX_PICKS}-golfer limit.`
+      )}`
+    );
+  }
+
+  for (const u of updates) {
+    await supabase
+      .from("pool_tiers")
+      .update({ tier_size: u.tier_size, picks_allowed: u.picks_allowed })
+      .eq("pool_id", poolId)
+      .eq("tier_number", u.tier_number);
+  }
+
+  await supabase.from("pools").update({ picks_per_entry: totalPicks }).eq("id", poolId);
   await regenerateAssignments(supabase, poolId, pool.tournament_id);
 
   redirect(`/pools/${poolId}`);
@@ -152,30 +182,30 @@ export async function submitPicks(formData: FormData) {
   const entryId = formData.get("entryId") as string;
   const poolId = formData.get("poolId") as string;
 
-  const { data: pool } = await supabase
-    .from("pools")
-    .select("picks_per_entry")
-    .eq("id", poolId)
-    .single();
+  const { data: tiers } = await supabase
+    .from("pool_tiers")
+    .select("tier_number, picks_allowed")
+    .eq("pool_id", poolId)
+    .returns<{ tier_number: number; picks_allowed: number }[]>();
 
-  const tierKeys = [...formData.keys()].filter((k) => k.startsWith("tier-"));
-  const golferIds = tierKeys
-    .map((k) => formData.get(k) as string)
-    .filter(Boolean);
-
-  if (pool && golferIds.length !== pool.picks_per_entry) {
-    redirect(
-      `/pools/${poolId}/pick?error=${encodeURIComponent(
-        `Pick exactly ${pool.picks_per_entry} golfer(s), one per tier.`
-      )}`
-    );
+  const allPicks: string[] = [];
+  for (const t of tiers ?? []) {
+    const selected = formData.getAll(`tier-${t.tier_number}`).filter(Boolean) as string[];
+    if (selected.length !== t.picks_allowed) {
+      redirect(
+        `/pools/${poolId}/pick?error=${encodeURIComponent(
+          `Tier ${t.tier_number}: pick exactly ${t.picks_allowed} golfer(s).`
+        )}`
+      );
+    }
+    allPicks.push(...selected);
   }
 
   await supabase.from("entry_picks").delete().eq("entry_id", entryId);
 
-  if (golferIds.length > 0) {
+  if (allPicks.length > 0) {
     await supabase.from("entry_picks").insert(
-      golferIds.map((golfPlayerId) => ({
+      allPicks.map((golfPlayerId) => ({
         entry_id: entryId,
         golf_player_id: golfPlayerId,
       }))

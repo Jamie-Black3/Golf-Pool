@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { BackLink, PageHeader } from "@/components/ui";
 import { deletePool } from "./actions";
 
 type Pool = {
@@ -31,39 +32,34 @@ export default async function AdminPage() {
     .returns<Pool[]>();
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-12">
-      <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
-        Admin &middot; Pools
-      </h1>
+    <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-10">
+      <BackLink href="/">Back home</BackLink>
+      <PageHeader title="Admin" subtitle="Manage every pool on the site." />
 
       {!pools || pools.length === 0 ? (
-        <p className="text-sm text-zinc-500">No pools yet.</p>
+        <div className="card p-6">
+          <p className="hint">No pools yet.</p>
+        </div>
       ) : (
-        <ul className="flex flex-col gap-2">
+        <ul className="flex flex-col gap-2.5">
           {pools.map((pool) => (
             <li
               key={pool.id}
-              className="flex items-center justify-between rounded-md border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800"
+              className="card flex items-center justify-between gap-4 px-5 py-4"
             >
-              <div>
-                <div className="font-medium text-zinc-950 dark:text-zinc-50">
-                  {pool.name}
-                </div>
-                <div className="text-zinc-500">
-                  {pool.tournaments?.name} &middot; owner:{" "}
-                  {pool.profiles?.account_name}
+              <div className="min-w-0">
+                <div className="truncate font-medium text-foreground">{pool.name}</div>
+                <div className="truncate text-sm text-muted">
+                  {pool.tournaments?.name} · owner: {pool.profiles?.account_name}
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <Link
-                  href={`/admin/pools/${pool.id}`}
-                  className="text-zinc-900 underline dark:text-zinc-50"
-                >
+              <div className="flex flex-none items-center gap-3 text-sm">
+                <Link href={`/admin/pools/${pool.id}`} className="btn btn-secondary px-3 py-1.5">
                   Edit
                 </Link>
                 <form action={deletePool}>
                   <input type="hidden" name="poolId" value={pool.id} />
-                  <button type="submit" className="text-red-600 underline dark:text-red-400">
+                  <button type="submit" className="text-red-600 transition-colors hover:text-red-700 dark:text-red-400">
                     Delete
                   </button>
                 </form>

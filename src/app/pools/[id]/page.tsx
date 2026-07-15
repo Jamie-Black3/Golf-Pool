@@ -4,6 +4,7 @@ import { BackLink, PageHeader, StatusPill, ToPar, OddsLabel } from "@/components
 import { joinPool } from "../actions";
 import { Leaderboard } from "./Leaderboard";
 import { PoolTabs } from "./PoolTabs";
+import { LiveRefresh } from "./LiveRefresh";
 
 type EntryPick = {
   golf_players: { name: string; to_par: number | null; status: string | null } | null;
@@ -42,14 +43,14 @@ export default async function PoolPage({
 
   const { data: pool } = await supabase
     .from("pools")
-    .select("id, name, owner_id, picks_per_entry, tournaments(name, status)")
+    .select("id, name, owner_id, picks_per_entry, tournaments(name, status, start_date, end_date)")
     .eq("id", id)
     .single<{
       id: string;
       name: string;
       owner_id: string;
       picks_per_entry: number;
-      tournaments: { name: string; status: string } | null;
+      tournaments: { name: string; status: string; start_date: string | null; end_date: string | null } | null;
     }>();
 
   const { data: entries } = await supabase
@@ -73,6 +74,15 @@ export default async function PoolPage({
   }
 
   const started = pool.tournaments?.status !== "upcoming";
+  const isLive = pool.tournaments?.status === "live";
+
+  // Auto-refresh during the tournament's date window (also catches the
+  // upcoming -> live flip on day one), but never once it's complete.
+  const today = new Date().toISOString().slice(0, 10);
+  const t = pool.tournaments;
+  const inWindow =
+    !!t?.start_date && !!t?.end_date && t.start_date <= today && today <= t.end_date;
+  const showLiveRefresh = t?.status !== "complete" && (isLive || inWindow);
 
   const leaderboard = (entries ?? [])
     .map((entry) => {
@@ -141,6 +151,11 @@ export default async function PoolPage({
       <PoolTabs
         standings={
           <div className="flex flex-col gap-2">
+            {showLiveRefresh && (
+              <div className="mb-1">
+                <LiveRefresh live={isLive} />
+              </div>
+            )}
             {!started && (
               <div className="rounded-lg border px-4 py-3 text-sm" style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--accent) 6%, transparent)" }}>
                 <span className="font-medium text-foreground">Not started yet.</span>{" "}

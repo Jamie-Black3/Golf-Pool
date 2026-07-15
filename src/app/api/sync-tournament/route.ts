@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
+import { type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const ESPN_SCOREBOARD_URL =
   "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard";
+
+// Don't pull from ESPN more than once per this window, no matter how many
+// viewers trigger an on-view refresh. Pass ?force=1 to bypass (manual/admin).
+const THROTTLE_SECONDS = 90;
 
 function parseToPar(score: string | undefined): number | null {
   if (!score) return null;
@@ -18,7 +23,27 @@ function mapStatus(state: string): string {
   return "upcoming";
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const force = request.nextUrl.searchParams.get("force") === "1";
+  const supabase = createAdminClient();
+
+  // Throttle: if the most recent tournament was synced within the window, skip
+  // the ESPN pull entirely (shared across all viewers).
+  if (!force) {
+    const { data: latest } = await supabase
+      .from("tournaments")
+      .select("last_synced_at")
+      .order("start_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latest?.last_synced_at) {
+      const ageSeconds = (Date.now() - new Date(latest.last_synced_at).getTime()) / 1000;
+      if (ageSeconds < THROTTLE_SECONDS) {
+        return NextResponse.json({ skipped: true, ageSeconds: Math.round(ageSeconds) });
+      }
+    }
+  }
+
   const espnRes = await fetch(ESPN_SCOREBOARD_URL, { cache: "no-store" });
   if (!espnRes.ok) {
     return NextResponse.json(
@@ -36,8 +61,6 @@ export async function GET() {
   const competition = event.competitions?.[0];
   const competitors = competition?.competitors ?? [];
 
-  const supabase = createAdminClient();
-
   const { data: tournament, error: tournamentError } = await supabase
     .from("tournaments")
     .upsert(
@@ -47,6 +70,7 @@ export async function GET() {
         start_date: event.date?.slice(0, 10),
         end_date: event.endDate?.slice(0, 10),
         status: mapStatus(event.status?.type?.state),
+        last_synced_at: new Date().toISOString(),
       },
       { onConflict: "espn_event_id" }
     )

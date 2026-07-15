@@ -4,8 +4,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 const ESPN_SCOREBOARD_URL =
   "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard";
 
-const TIER_COUNT = 4;
-
 function parseToPar(score: string | undefined): number | null {
   if (!score) return null;
   if (score === "E") return 0;
@@ -65,13 +63,22 @@ export async function GET() {
   const sorted = [...competitors].sort(
     (a, b) => (a.order ?? 0) - (b.order ?? 0)
   );
-  const tierSize = Math.ceil(sorted.length / TIER_COUNT);
+
+  const { data: existing } = await supabase
+    .from("golf_players")
+    .select("espn_athlete_id, odds_rank")
+    .eq("tournament_id", tournament.id);
+
+  const existingRanks = new Map(
+    (existing ?? []).map((p) => [p.espn_athlete_id, p.odds_rank])
+  );
 
   const players = sorted.map((c, i) => ({
     tournament_id: tournament.id,
     espn_athlete_id: c.id,
     name: c.athlete?.displayName ?? "Unknown",
-    tier: Math.min(TIER_COUNT, Math.floor(i / tierSize) + 1),
+    // Field order as a placeholder rank until /api/sync-odds sets a real one.
+    odds_rank: existingRanks.get(c.id) ?? i + 1,
     to_par: parseToPar(c.score),
     status: c.status?.type?.description ?? "active",
     updated_at: new Date().toISOString(),

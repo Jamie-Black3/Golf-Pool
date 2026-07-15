@@ -68,6 +68,43 @@ export default async function NewPoolPage({
               </select>
             </div>
 
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <label className="mb-1 block text-sm text-zinc-700 dark:text-zinc-300">
+                  Number of tiers
+                </label>
+                <input
+                  name="tierCount"
+                  type="number"
+                  min={1}
+                  max={10}
+                  defaultValue={4}
+                  required
+                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="mb-1 block text-sm text-zinc-700 dark:text-zinc-300">
+                  Picks per entry
+                </label>
+                <input
+                  name="picksPerEntry"
+                  type="number"
+                  min={1}
+                  max={10}
+                  defaultValue={4}
+                  required
+                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+              </div>
+            </div>
+            <p className="-mt-2 text-xs text-zinc-500">
+              Golfers are split into tiers by odds (best chance to win = tier
+              1). Each entrant picks one golfer per tier, up to &quot;picks
+              per entry&quot; tiers of their choosing. You can rebalance how
+              many golfers fall in each tier on the next screen.
+            </p>
+
             <button
               type="submit"
               className="mt-2 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"

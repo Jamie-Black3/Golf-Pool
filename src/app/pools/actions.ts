@@ -141,6 +141,14 @@ export async function updateTiers(formData: FormData) {
     );
   }
 
+  // How many of the best picks count toward the score. Blank/0 or >= total
+  // means all picks count (stored as null).
+  const rawCounting = parseInt(formData.get("countingPicks") as string, 10);
+  const countingPicks =
+    Number.isFinite(rawCounting) && rawCounting > 0 && rawCounting < totalPicks
+      ? rawCounting
+      : null;
+
   for (const u of updates) {
     await supabase
       .from("pool_tiers")
@@ -149,7 +157,10 @@ export async function updateTiers(formData: FormData) {
       .eq("tier_number", u.tier_number);
   }
 
-  await supabase.from("pools").update({ picks_per_entry: totalPicks }).eq("id", poolId);
+  await supabase
+    .from("pools")
+    .update({ picks_per_entry: totalPicks, counting_picks: countingPicks })
+    .eq("id", poolId);
   await regenerateAssignments(supabase, poolId, pool.tournament_id);
 
   redirect(`/pools/${poolId}`);

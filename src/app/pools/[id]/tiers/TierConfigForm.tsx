@@ -11,18 +11,27 @@ export function TierConfigForm({
   poolId,
   fieldSize,
   initialTiers,
+  initialCountingPicks,
 }: {
   poolId: string;
   fieldSize: number;
   initialTiers: Tier[];
+  initialCountingPicks: number | null;
 }) {
   const [tiers, setTiers] = useState<Tier[]>(initialTiers);
+  const [countingPicks, setCountingPicks] = useState<string>(
+    initialCountingPicks ? String(initialCountingPicks) : ""
+  );
 
   const totalAssigned = tiers.reduce((s, t) => s + t.tier_size, 0);
   const totalPicks = tiers.reduce((s, t) => s + Math.min(t.picks_allowed, t.tier_size), 0);
 
   const sizesOk = totalAssigned === fieldSize;
   const picksOk = totalPicks > 0 && totalPicks <= MAX_PICKS;
+
+  const countingNum = parseInt(countingPicks, 10);
+  const countingOk =
+    countingPicks === "" || (countingNum > 0 && countingNum <= totalPicks);
 
   function update(idx: number, key: "tier_size" | "picks_allowed", value: number) {
     setTiers((prev) =>
@@ -79,7 +88,33 @@ export function TierConfigForm({
         </span>
       </div>
 
-      <button type="submit" disabled={!sizesOk || !picksOk} className="btn btn-primary w-fit">
+      <div className="card flex flex-col gap-2 p-4">
+        <label className="label">Scoring — best picks that count</label>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            name="countingPicks"
+            min={1}
+            max={totalPicks}
+            value={countingPicks}
+            onChange={(e) => setCountingPicks(e.target.value)}
+            placeholder="all"
+            className="input max-w-24"
+          />
+          <span className="hint">of {totalPicks} picks count toward the score</span>
+        </div>
+        <p className="hint">
+          Only each entrant&apos;s best {countingPicks || "N"} golfers count; the
+          rest are dropped. Leave blank to count all. A golfer who misses the cut
+          gets +8 added (for the two weekend rounds), which usually drops them.
+        </p>
+      </div>
+
+      <button
+        type="submit"
+        disabled={!sizesOk || !picksOk || !countingOk}
+        className="btn btn-primary w-fit"
+      >
         Save &amp; open pool
       </button>
       {!sizesOk && (
@@ -87,6 +122,9 @@ export function TierConfigForm({
       )}
       {!picksOk && (
         <p className="hint -mt-2">Total picks must be between 1 and {MAX_PICKS}.</p>
+      )}
+      {!countingOk && (
+        <p className="hint -mt-2">Counting picks must be between 1 and {totalPicks}.</p>
       )}
     </form>
   );

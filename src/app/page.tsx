@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { StatusPill, ToPar } from "@/components/ui";
+import { scoreEntry } from "@/lib/scoring";
 
 type MyEntry = {
   pool_id: string;
   pools: {
     id: string;
     name: string;
+    counting_picks: number | null;
     tournaments: { name: string; status: string } | null;
   } | null;
 };
@@ -14,7 +16,7 @@ type MyEntry = {
 type PoolEntry = {
   pool_id: string;
   user_id: string;
-  entry_picks: { golf_players: { to_par: number | null } | null }[];
+  entry_picks: { golf_players: { to_par: number | null; status: string | null } | null }[];
 };
 
 export default async function Home() {
@@ -46,7 +48,7 @@ export default async function Home() {
   if (user) {
     const { data: mine } = await supabase
       .from("pool_entries")
-      .select("pool_id, pools(id, name, tournaments(name, status))")
+      .select("pool_id, pools(id, name, counting_picks, tournaments(name, status))")
       .eq("user_id", user.id)
       .returns<MyEntry[]>();
 
@@ -55,7 +57,7 @@ export default async function Home() {
     if (poolIds.length > 0) {
       const { data: allEntries } = await supabase
         .from("pool_entries")
-        .select("pool_id, user_id, entry_picks(golf_players(to_par))")
+        .select("pool_id, user_id, entry_picks(golf_players(to_par, status))")
         .in("pool_id", poolIds)
         .returns<PoolEntry[]>();
 
@@ -65,13 +67,15 @@ export default async function Home() {
           const pool = m.pools!;
           const entries = (allEntries ?? []).filter((e) => e.pool_id === m.pool_id);
           const standings = entries
-            .map((e) => ({
-              userId: e.user_id,
-              total: e.entry_picks.reduce(
-                (s, p) => s + (p.golf_players?.to_par ?? 0),
-                0
-              ),
-            }))
+            .map((e) => {
+              const picks = e.entry_picks
+                .map((p) => p.golf_players)
+                .filter((g): g is { to_par: number | null; status: string | null } => !!g);
+              return {
+                userId: e.user_id,
+                total: scoreEntry(picks, pool.counting_picks).total,
+              };
+            })
             .sort((a, b) => a.total - b.total);
           const rank = standings.findIndex((s) => s.userId === user.id) + 1;
           const me = standings.find((s) => s.userId === user.id);

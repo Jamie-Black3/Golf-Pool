@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { BackLink, PageHeader, StatusPill, ToPar, OddsLabel } from "@/components/ui";
 import { joinPool, setPoolLock } from "../actions";
+import { scoreEntry } from "@/lib/scoring";
 import { Leaderboard } from "./Leaderboard";
 import { PoolTabs } from "./PoolTabs";
 import { LiveRefresh } from "./LiveRefresh";
@@ -43,13 +44,14 @@ export default async function PoolPage({
 
   const { data: pool } = await supabase
     .from("pools")
-    .select("id, name, owner_id, picks_per_entry, locked_at, tournaments(name, status, start_date, end_date)")
+    .select("id, name, owner_id, picks_per_entry, counting_picks, locked_at, tournaments(name, status, start_date, end_date)")
     .eq("id", id)
     .single<{
       id: string;
       name: string;
       owner_id: string;
       picks_per_entry: number;
+      counting_picks: number | null;
       locked_at: string | null;
       tournaments: { name: string; status: string; start_date: string | null; end_date: string | null } | null;
     }>();
@@ -87,10 +89,10 @@ export default async function PoolPage({
 
   const leaderboard = (entries ?? [])
     .map((entry) => {
-      const picks = entry.entry_picks
+      const rawPicks = entry.entry_picks
         .map((p) => p.golf_players)
         .filter((g): g is { name: string; to_par: number | null; status: string | null } => !!g);
-      const total = picks.reduce((sum, g) => sum + (g.to_par ?? 0), 0);
+      const { total, picks } = scoreEntry(rawPicks, pool.counting_picks);
       return {
         id: entry.id,
         userId: entry.user_id,
@@ -127,7 +129,12 @@ export default async function PoolPage({
           <span className="inline-flex items-center gap-2">
             {pool.tournaments?.name}
             {pool.tournaments && <StatusPill status={pool.tournaments.status} />}
-            <span className="text-muted">· {pool.picks_per_entry} picks</span>
+            <span className="text-muted">
+              ·{" "}
+              {pool.counting_picks && pool.counting_picks < pool.picks_per_entry
+                ? `best ${pool.counting_picks} of ${pool.picks_per_entry} count`
+                : `${pool.picks_per_entry} picks`}
+            </span>
           </span>
         }
         action={
@@ -226,7 +233,12 @@ export default async function PoolPage({
             ) : (
               <>
                 <span className="text-xs text-muted">Tap a row to see golfer scores.</span>
-                <Leaderboard entries={leaderboard} currentUserId={user?.id} started={started} />
+                <Leaderboard
+                  entries={leaderboard}
+                  currentUserId={user?.id}
+                  started={started}
+                  countingPicks={pool.counting_picks}
+                />
               </>
             )}
           </div>

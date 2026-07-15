@@ -21,13 +21,14 @@ export default async function TiersPage({
 
   const { data: pool } = await supabase
     .from("pools")
-    .select("id, name, owner_id, tournament_id, tournaments(name)")
+    .select("id, name, owner_id, tournament_id, counting_picks, tournaments(name)")
     .eq("id", poolId)
     .single<{
       id: string;
       name: string;
       owner_id: string;
       tournament_id: string;
+      counting_picks: number | null;
       tournaments: { name: string } | null;
     }>();
 
@@ -70,6 +71,7 @@ export default async function TiersPage({
         poolId={poolId}
         fieldSize={fieldSize ?? 0}
         initialTiers={tiers ?? []}
+        initialCountingPicks={pool.counting_picks}
       />
     </div>
   );

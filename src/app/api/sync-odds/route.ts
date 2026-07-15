@@ -202,14 +202,27 @@ export async function GET() {
   // once play begins we freeze tiers (and any manual admin moves) so live
   // scoring is stable.
   let poolsReseeded = 0;
+  let poolsFrozen = 0;
   if (tournament.status === "upcoming") {
     const orderedIds = ordered.map((p) => p.id);
     const { data: pools } = await supabase
       .from("pools")
-      .select("id")
+      .select("id, locked_at")
       .eq("tournament_id", tournament.id);
 
     for (const pool of pools ?? []) {
+      // Freeze tiers once the pool is explicitly locked, or once anyone has
+      // committed picks — so nobody's drafted structure shifts under them.
+      const { count: pickCount } = await supabase
+        .from("entry_picks")
+        .select("id, pool_entries!inner(pool_id)", { count: "exact", head: true })
+        .eq("pool_entries.pool_id", pool.id);
+
+      if (pool.locked_at || (pickCount ?? 0) > 0) {
+        poolsFrozen++;
+        continue;
+      }
+
       const { data: tiers } = await supabase
         .from("pool_tiers")
         .select("tier_number, tier_size")
@@ -240,5 +253,6 @@ export async function GET() {
     unmatchedCount: unmatched.length,
     unmatched: unmatched.map((p) => p.name),
     poolsReseeded,
+    poolsFrozen,
   });
 }

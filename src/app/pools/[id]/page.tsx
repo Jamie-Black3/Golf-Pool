@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { BackLink, PageHeader, StatusPill, ToPar, OddsLabel } from "@/components/ui";
-import { joinPool } from "../actions";
+import { joinPool, setPoolLock } from "../actions";
 import { Leaderboard } from "./Leaderboard";
 import { PoolTabs } from "./PoolTabs";
 import { LiveRefresh } from "./LiveRefresh";
@@ -43,13 +43,14 @@ export default async function PoolPage({
 
   const { data: pool } = await supabase
     .from("pools")
-    .select("id, name, owner_id, picks_per_entry, tournaments(name, status, start_date, end_date)")
+    .select("id, name, owner_id, picks_per_entry, locked_at, tournaments(name, status, start_date, end_date)")
     .eq("id", id)
     .single<{
       id: string;
       name: string;
       owner_id: string;
       picks_per_entry: number;
+      locked_at: string | null;
       tournaments: { name: string; status: string; start_date: string | null; end_date: string | null } | null;
     }>();
 
@@ -104,6 +105,14 @@ export default async function PoolPage({
   const isOwner = user?.id === pool.owner_id;
   const joinPoolWithId = joinPool.bind(null, id);
 
+  // Tiers freeze once anyone has committed picks, or when the owner locks the
+  // pool — after that, odds updates won't reshuffle which tier a golfer is in.
+  const poolHasPicks = leaderboard.some((e) => e.picks.length > 0);
+  const frozen = !!pool.locked_at || poolHasPicks;
+  const canToggleLock = isOwner && pool.tournaments?.status === "upcoming";
+  const lockPool = setPoolLock.bind(null, id, true);
+  const unlockPool = setPoolLock.bind(null, id, false);
+
   const field = (fieldRows ?? [])
     .filter((r) => r.golf_players)
     .map((r) => ({ tier: r.tier_number, ...r.golf_players! }))
@@ -146,6 +155,51 @@ export default async function PoolPage({
         <Link href="/login" className="btn btn-primary w-fit">
           Sign in to join
         </Link>
+      )}
+
+      {/* Freeze status + owner lock control */}
+      {!started && (frozen || canToggleLock) && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <div className="flex items-center gap-2">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={frozen ? "text-accent" : "text-muted"} aria-hidden>
+              {frozen ? (
+                <>
+                  <rect x="3" y="11" width="18" height="11" rx="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </>
+              ) : (
+                <>
+                  <rect x="3" y="11" width="18" height="11" rx="2" />
+                  <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                </>
+              )}
+            </svg>
+            <span className="text-foreground">
+              {frozen
+                ? poolHasPicks && !pool.locked_at
+                  ? "Tiers frozen — picks have been made"
+                  : "Tiers locked by owner"
+                : "Tiers still update with odds"}
+            </span>
+          </div>
+          {canToggleLock && (
+            <form action={pool.locked_at ? unlockPool : lockPool}>
+              <button type="submit" className="btn btn-secondary px-3 py-1.5">
+                {pool.locked_at ? "Unlock tiers" : "Lock tiers now"}
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+
+      {myEntry && (
+        <p className="hint -mt-2">
+          Your team is a fixed set of golfers — odds or tier changes never affect
+          your picks or your score.
+        </p>
       )}
 
       <PoolTabs

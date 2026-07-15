@@ -155,6 +155,28 @@ export async function updateTiers(formData: FormData) {
   redirect(`/pools/${poolId}`);
 }
 
+export async function setPoolLock(poolId: string, lock: boolean) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: pool } = await supabase
+    .from("pools")
+    .select("owner_id")
+    .eq("id", poolId)
+    .single<{ owner_id: string }>();
+  if (!pool || pool.owner_id !== user.id) redirect(`/pools/${poolId}`);
+
+  await supabase
+    .from("pools")
+    .update({ locked_at: lock ? new Date().toISOString() : null })
+    .eq("id", poolId);
+
+  redirect(`/pools/${poolId}`);
+}
+
 export async function joinPool(poolId: string) {
   const supabase = await createClient();
   const {

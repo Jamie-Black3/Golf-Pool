@@ -5,9 +5,39 @@ function normalizeName(name: string): string {
   return name
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[̀-ͯ]/g, "") // strip combining diacritics (é, å, etc.)
+    .replace(/ø/g, "o")
+    .replace(/æ/g, "ae")
+    .replace(/ð/g, "d")
+    .replace(/þ/g, "th")
+    .replace(/ß/g, "ss")
     .replace(/[^a-z0-9 ]/g, "")
     .trim();
+}
+
+// Secondary match key: first initial + last name (catches nickname/formal-name
+// differences like "Matt Fitzpatrick" vs "Matthew Fitzpatrick"). Returns null
+// for single-token names so we never match on those.
+function initialLastKey(name: string): string | null {
+  const parts = normalizeName(name).split(" ").filter(Boolean);
+  if (parts.length < 2) return null;
+  return `${parts[0][0]}|${parts[parts.length - 1]}`;
+}
+
+// Build a lookup that only keeps keys that are unique on this side, so we never
+// mismatch two people who share an initial+surname (e.g. the Højgaard brothers).
+function uniqueKeyMap<T>(items: T[], keyFn: (t: T) => string | null): Map<string, T> {
+  const counts = new Map<string, number>();
+  for (const it of items) {
+    const k = keyFn(it);
+    if (k) counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  const map = new Map<string, T>();
+  for (const it of items) {
+    const k = keyFn(it);
+    if (k && counts.get(k) === 1) map.set(k, it);
+  }
+  return map;
 }
 
 function americanOddsToProbability(price: number): number {
@@ -89,39 +119,55 @@ export async function GET() {
     }
   }
 
-  const golferProbabilities = new Map<string, number>();
+  // Average each golfer's implied probability across books, keyed by full name.
+  const probByFullName = new Map<string, number>();
   for (const [name, prices] of outcomePrices) {
     const avgProb =
       prices.reduce((sum, p) => sum + americanOddsToProbability(p), 0) /
       prices.length;
-    golferProbabilities.set(name, avgProb);
+    probByFullName.set(name, avgProb);
   }
+
+  // Secondary lookup keyed by initial+lastname, only for names unique on the
+  // odds side, mapping to the golfer's probability.
+  const oddsEntries = [...probByFullName.keys()].map((n) => ({ name: n }));
+  const oddsByInitialLast = uniqueKeyMap(oddsEntries, (e) => initialLastKey(e.name));
 
   const { data: players } = await supabase
     .from("golf_players")
     .select("id, name")
     .eq("tournament_id", tournament.id);
 
-  const matched: { id: string; odds_rank: number }[] = [];
-  const unmatched: string[] = [];
+  // Guard the secondary pass against our own duplicate initial+surnames too.
+  const playerKeyUnique = uniqueKeyMap(players ?? [], (p) => initialLastKey(p.name));
 
-  const ranked = (players ?? [])
-    .map((p) => ({
-      ...p,
-      probability: golferProbabilities.get(normalizeName(p.name)),
-    }))
+  function probFor(playerName: string): number | undefined {
+    const full = normalizeName(playerName);
+    if (probByFullName.has(full)) return probByFullName.get(full);
+    const key = initialLastKey(playerName);
+    if (key && playerKeyUnique.has(key) && oddsByInitialLast.has(key)) {
+      return probByFullName.get(oddsByInitialLast.get(key)!.name);
+    }
+    return undefined;
+  }
+
+  const withProb = (players ?? []).map((p) => ({ ...p, probability: probFor(p.name) }));
+
+  const matched = withProb
     .filter((p) => p.probability !== undefined)
     .sort((a, b) => (b.probability ?? 0) - (a.probability ?? 0));
 
-  ranked.forEach((p, i) => matched.push({ id: p.id, odds_rank: i + 1 }));
+  // Unmatched golfers get ranks after all matched ones, ordered by name, so the
+  // odds_rank column stays a clean 1..N with no collisions.
+  const unmatched = withProb
+    .filter((p) => p.probability === undefined)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
-  for (const p of players ?? []) {
-    if (!golferProbabilities.has(normalizeName(p.name))) unmatched.push(p.name);
-  }
+  const ordered = [...matched, ...unmatched];
 
   await Promise.all(
-    matched.map((m) =>
-      supabase.from("golf_players").update({ odds_rank: m.odds_rank }).eq("id", m.id)
+    ordered.map((p, i) =>
+      supabase.from("golf_players").update({ odds_rank: i + 1 }).eq("id", p.id)
     )
   );
 
@@ -129,6 +175,7 @@ export async function GET() {
     tournament: tournament.name,
     oddsMarket: match.description,
     matched: matched.length,
-    unmatched,
+    unmatchedCount: unmatched.length,
+    unmatched: unmatched.map((p) => p.name),
   });
 }

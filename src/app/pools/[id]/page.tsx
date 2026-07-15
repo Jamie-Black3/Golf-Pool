@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { BackLink, PageHeader, StatusPill, ToPar } from "@/components/ui";
+import { BackLink, PageHeader, StatusPill } from "@/components/ui";
 import { joinPool } from "../actions";
+import { Leaderboard } from "./Leaderboard";
 
 type EntryPick = {
-  golf_players: { name: string; to_par: number | null } | null;
+  golf_players: { name: string; to_par: number | null; status: string | null } | null;
 };
 
 type Entry = {
@@ -40,7 +41,7 @@ export default async function PoolPage({
 
   const { data: entries } = await supabase
     .from("pool_entries")
-    .select("id, user_id, profiles(account_name), entry_picks(golf_players(name, to_par))")
+    .select("id, user_id, profiles(account_name), entry_picks(golf_players(name, to_par, status))")
     .eq("pool_id", id)
     .returns<Entry[]>();
 
@@ -52,11 +53,13 @@ export default async function PoolPage({
     );
   }
 
+  const started = pool.tournaments?.status !== "upcoming";
+
   const leaderboard = (entries ?? [])
     .map((entry) => {
       const picks = entry.entry_picks
         .map((p) => p.golf_players)
-        .filter((g): g is { name: string; to_par: number | null } => !!g);
+        .filter((g): g is { name: string; to_par: number | null; status: string | null } => !!g);
       const total = picks.reduce((sum, g) => sum + (g.to_par ?? 0), 0);
       return {
         id: entry.id,
@@ -112,41 +115,31 @@ export default async function PoolPage({
       )}
 
       <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-foreground">Leaderboard</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-foreground">Leaderboard</h2>
+          <span className="text-xs text-muted">tap a row to see golfer scores</span>
+        </div>
+
+        {!started && (
+          <div className="mb-1 rounded-lg border px-4 py-3 text-sm" style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--accent) 6%, transparent)" }}>
+            <span className="font-medium text-foreground">Not started yet.</span>{" "}
+            <span className="text-muted">
+              Scores appear once {pool.tournaments?.name} tees off. Standings sort by
+              lowest combined score to par.
+            </span>
+          </div>
+        )}
+
         {leaderboard.length === 0 ? (
           <div className="card p-6">
             <p className="hint">No entries yet — be the first to join.</p>
           </div>
         ) : (
-          <div className="card divide-y" style={{ borderColor: "var(--border)" }}>
-            {leaderboard.map((entry, i) => (
-              <div
-                key={entry.id}
-                className={`flex items-center gap-4 px-4 py-3 ${
-                  entry.userId === user?.id ? "bg-[color-mix(in_srgb,var(--accent)_7%,transparent)]" : ""
-                }`}
-                style={{ borderColor: "var(--border)" }}
-              >
-                <span className="w-5 flex-none text-center text-sm font-semibold text-muted">
-                  {i + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-foreground">
-                    {entry.accountName}
-                    {entry.userId === user?.id && (
-                      <span className="ml-1.5 text-xs font-normal text-accent">you</span>
-                    )}
-                  </div>
-                  <div className="truncate text-xs text-muted">
-                    {entry.picks.length > 0
-                      ? entry.picks.map((p) => p.name).join(", ")
-                      : "No picks yet"}
-                  </div>
-                </div>
-                <ToPar value={entry.total} />
-              </div>
-            ))}
-          </div>
+          <Leaderboard
+            entries={leaderboard}
+            currentUserId={user?.id}
+            started={started}
+          />
         )}
       </div>
     </div>

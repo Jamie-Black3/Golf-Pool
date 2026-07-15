@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { BackLink, PageHeader, StatusPill, ToPar } from "@/components/ui";
+import { BackLink, PageHeader, StatusPill, ToPar, OddsLabel } from "@/components/ui";
 import { joinPool } from "../actions";
 import { Leaderboard } from "./Leaderboard";
 import { PoolTabs } from "./PoolTabs";
@@ -22,6 +22,7 @@ type FieldRow = {
     id: string;
     name: string;
     odds_rank: number | null;
+    win_prob: number | null;
     to_par: number | null;
     status: string | null;
   } | null;
@@ -59,7 +60,7 @@ export default async function PoolPage({
 
   const { data: fieldRows } = await supabase
     .from("pool_tier_assignments")
-    .select("tier_number, golf_players(id, name, odds_rank, to_par, status)")
+    .select("tier_number, golf_players(id, name, odds_rank, win_prob, to_par, status)")
     .eq("pool_id", id)
     .returns<FieldRow[]>();
 
@@ -186,8 +187,11 @@ export default async function PoolPage({
                         </span>
                       )}
                     </span>
+                    <span className="w-14 flex-none text-right">
+                      <OddsLabel prob={g.win_prob} />
+                    </span>
                     <span className="flex-none rounded-full border px-2 py-0.5 text-xs font-medium text-muted" style={{ borderColor: "var(--border)" }}>
-                      Tier {g.tier}
+                      T{g.tier}
                     </span>
                     <span className="w-10 flex-none text-right">
                       {started ? <ToPar value={g.to_par ?? 0} /> : <span className="text-muted">—</span>}

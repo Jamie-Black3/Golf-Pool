@@ -55,6 +55,17 @@ export function ToPar({ value }: { value: number }) {
   return <span className={`font-mono font-medium tabular-nums ${tone}`}>{label}</span>;
 }
 
+// American-style odds derived from implied win probability (e.g. +750).
+export function OddsLabel({ prob }: { prob: number | null }) {
+  if (!prob || prob <= 0) return <span className="font-mono text-xs text-muted">—</span>;
+  const american =
+    prob >= 0.5
+      ? Math.round((-100 * prob) / (1 - prob))
+      : Math.round((100 * (1 - prob)) / prob);
+  const label = american > 0 ? `+${american}` : `${american}`;
+  return <span className="font-mono text-xs tabular-nums text-muted">{label}</span>;
+}
+
 export function StatusPill({ status }: { status: string }) {
   const map: Record<string, string> = {
     live: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",

@@ -15,6 +15,13 @@ function normalizeName(name: string): string {
     .trim();
 }
 
+// Explicit aliases for golfers the books list under a different given name
+// where the surname alone is ambiguous (multiple Kims, etc.). Keyed by
+// normalized ESPN name -> normalized odds name.
+const NAME_ALIASES: Record<string, string> = {
+  "tom kim": "joohyung kim",
+};
+
 // Secondary match key: first initial + last name (catches nickname/formal-name
 // differences like "Matt Fitzpatrick" vs "Matthew Fitzpatrick"). Returns null
 // for single-token names so we never match on those.
@@ -22,6 +29,14 @@ function initialLastKey(name: string): string | null {
   const parts = normalizeName(name).split(" ").filter(Boolean);
   if (parts.length < 2) return null;
   return `${parts[0][0]}|${parts[parts.length - 1]}`;
+}
+
+// Tertiary key: surname only, used only when unique on both sides (catches
+// entirely different given names like "Fifa" vs "Pongsapak" Laopakdee).
+function lastNameKey(name: string): string | null {
+  const parts = normalizeName(name).split(" ").filter(Boolean);
+  if (parts.length < 2) return null;
+  return parts[parts.length - 1];
 }
 
 // Build a lookup that only keeps keys that are unique on this side, so we never
@@ -54,7 +69,7 @@ export async function GET() {
 
   const { data: tournament } = await supabase
     .from("tournaments")
-    .select("id, name")
+    .select("id, name, status")
     .order("start_date", { ascending: false })
     .limit(1)
     .single();
@@ -128,25 +143,33 @@ export async function GET() {
     probByFullName.set(name, avgProb);
   }
 
-  // Secondary lookup keyed by initial+lastname, only for names unique on the
-  // odds side, mapping to the golfer's probability.
   const oddsEntries = [...probByFullName.keys()].map((n) => ({ name: n }));
   const oddsByInitialLast = uniqueKeyMap(oddsEntries, (e) => initialLastKey(e.name));
+  const oddsByLastName = uniqueKeyMap(oddsEntries, (e) => lastNameKey(e.name));
 
   const { data: players } = await supabase
     .from("golf_players")
     .select("id, name")
     .eq("tournament_id", tournament.id);
 
-  // Guard the secondary pass against our own duplicate initial+surnames too.
-  const playerKeyUnique = uniqueKeyMap(players ?? [], (p) => initialLastKey(p.name));
+  // Guard each fuzzy pass against our own duplicate keys too.
+  const playerInitialLastUnique = uniqueKeyMap(players ?? [], (p) => initialLastKey(p.name));
+  const playerLastNameUnique = uniqueKeyMap(players ?? [], (p) => lastNameKey(p.name));
 
   function probFor(playerName: string): number | undefined {
     const full = normalizeName(playerName);
-    if (probByFullName.has(full)) return probByFullName.get(full);
-    const key = initialLastKey(playerName);
-    if (key && playerKeyUnique.has(key) && oddsByInitialLast.has(key)) {
-      return probByFullName.get(oddsByInitialLast.get(key)!.name);
+    // 1. exact full name (or explicit alias)
+    const aliased = NAME_ALIASES[full] ?? full;
+    if (probByFullName.has(aliased)) return probByFullName.get(aliased);
+    // 2. first initial + surname, unique on both sides
+    const ilk = initialLastKey(playerName);
+    if (ilk && playerInitialLastUnique.has(ilk) && oddsByInitialLast.has(ilk)) {
+      return probByFullName.get(oddsByInitialLast.get(ilk)!.name);
+    }
+    // 3. surname only, unique on both sides
+    const lnk = lastNameKey(playerName);
+    if (lnk && playerLastNameUnique.has(lnk) && oddsByLastName.has(lnk)) {
+      return probByFullName.get(oddsByLastName.get(lnk)!.name);
     }
     return undefined;
   }
@@ -167,9 +190,48 @@ export async function GET() {
 
   await Promise.all(
     ordered.map((p, i) =>
-      supabase.from("golf_players").update({ odds_rank: i + 1 }).eq("id", p.id)
+      supabase
+        .from("golf_players")
+        .update({ odds_rank: i + 1, win_prob: p.probability ?? null })
+        .eq("id", p.id)
     )
   );
+
+  // Re-seed tier assignments for pools on this tournament so odds changes
+  // actually reach existing pools. Only for tournaments that haven't started —
+  // once play begins we freeze tiers (and any manual admin moves) so live
+  // scoring is stable.
+  let poolsReseeded = 0;
+  if (tournament.status === "upcoming") {
+    const orderedIds = ordered.map((p) => p.id);
+    const { data: pools } = await supabase
+      .from("pools")
+      .select("id")
+      .eq("tournament_id", tournament.id);
+
+    for (const pool of pools ?? []) {
+      const { data: tiers } = await supabase
+        .from("pool_tiers")
+        .select("tier_number, tier_size")
+        .eq("pool_id", pool.id)
+        .order("tier_number");
+
+      const rows: { pool_id: string; golf_player_id: string; tier_number: number }[] = [];
+      let cursor = 0;
+      for (const t of tiers ?? []) {
+        for (const gid of orderedIds.slice(cursor, cursor + t.tier_size)) {
+          rows.push({ pool_id: pool.id, golf_player_id: gid, tier_number: t.tier_number });
+        }
+        cursor += t.tier_size;
+      }
+
+      await supabase.from("pool_tier_assignments").delete().eq("pool_id", pool.id);
+      if (rows.length > 0) {
+        await supabase.from("pool_tier_assignments").insert(rows);
+      }
+      poolsReseeded++;
+    }
+  }
 
   return NextResponse.json({
     tournament: tournament.name,
@@ -177,5 +239,6 @@ export async function GET() {
     matched: matched.length,
     unmatchedCount: unmatched.length,
     unmatched: unmatched.map((p) => p.name),
+    poolsReseeded,
   });
 }

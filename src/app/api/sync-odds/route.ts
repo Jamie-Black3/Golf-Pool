@@ -119,12 +119,11 @@ export async function GET() {
     if (!golferProbabilities.has(normalizeName(p.name))) unmatched.push(p.name);
   }
 
-  for (const m of matched) {
-    await supabase
-      .from("golf_players")
-      .update({ odds_rank: m.odds_rank })
-      .eq("id", m.id);
-  }
+  await Promise.all(
+    matched.map((m) =>
+      supabase.from("golf_players").update({ odds_rank: m.odds_rank }).eq("id", m.id)
+    )
+  );
 
   return NextResponse.json({
     tournament: tournament.name,

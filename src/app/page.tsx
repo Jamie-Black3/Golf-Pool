@@ -1,6 +1,21 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { StatusPill } from "@/components/ui";
+import { StatusPill, ToPar } from "@/components/ui";
+
+type MyEntry = {
+  pool_id: string;
+  pools: {
+    id: string;
+    name: string;
+    tournaments: { name: string; status: string } | null;
+  } | null;
+};
+
+type PoolEntry = {
+  pool_id: string;
+  user_id: string;
+  entry_picks: { golf_players: { to_par: number | null } | null }[];
+};
 
 export default async function Home() {
   const supabase = await createClient();
@@ -16,12 +31,68 @@ export default async function Home() {
       { id: string; name: string; tournaments: { name: string; status: string } | null }[]
     >();
 
+  // "My Pools" — pools the signed-in user has an entry in, with rank + score.
+  let myPools: {
+    id: string;
+    name: string;
+    tournament: string;
+    status: string;
+    started: boolean;
+    rank: number;
+    total: number;
+    entrants: number;
+  }[] = [];
+
+  if (user) {
+    const { data: mine } = await supabase
+      .from("pool_entries")
+      .select("pool_id, pools(id, name, tournaments(name, status))")
+      .eq("user_id", user.id)
+      .returns<MyEntry[]>();
+
+    const poolIds = (mine ?? []).map((m) => m.pool_id);
+
+    if (poolIds.length > 0) {
+      const { data: allEntries } = await supabase
+        .from("pool_entries")
+        .select("pool_id, user_id, entry_picks(golf_players(to_par))")
+        .in("pool_id", poolIds)
+        .returns<PoolEntry[]>();
+
+      myPools = (mine ?? [])
+        .filter((m) => m.pools)
+        .map((m) => {
+          const pool = m.pools!;
+          const entries = (allEntries ?? []).filter((e) => e.pool_id === m.pool_id);
+          const standings = entries
+            .map((e) => ({
+              userId: e.user_id,
+              total: e.entry_picks.reduce(
+                (s, p) => s + (p.golf_players?.to_par ?? 0),
+                0
+              ),
+            }))
+            .sort((a, b) => a.total - b.total);
+          const rank = standings.findIndex((s) => s.userId === user.id) + 1;
+          const me = standings.find((s) => s.userId === user.id);
+          return {
+            id: pool.id,
+            name: pool.name,
+            tournament: pool.tournaments?.name ?? "",
+            status: pool.tournaments?.status ?? "upcoming",
+            started: pool.tournaments?.status !== "upcoming",
+            rank,
+            total: me?.total ?? 0,
+            entrants: standings.length,
+          };
+        });
+    }
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 px-4 py-12">
       <div className="flex flex-col items-start gap-4 rounded-2xl border bg-surface p-8" style={{ borderColor: "var(--border)" }}>
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent text-xl">
-          ⛳
-        </div>
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent text-xl">⛳</div>
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Golf Pool</h1>
           <p className="mt-1 max-w-md text-muted">
@@ -34,8 +105,40 @@ export default async function Home() {
         </Link>
       </div>
 
+      {myPools.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-foreground">My pools</h2>
+          <ul className="flex flex-col gap-2.5">
+            {myPools.map((p) => (
+              <li key={p.id}>
+                <Link
+                  href={`/pools/${p.id}`}
+                  className="card flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:border-accent"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-foreground">{p.name}</div>
+                    <div className="mt-0.5 flex items-center gap-2 text-sm text-muted">
+                      <span className="truncate">{p.tournament}</span>
+                      <StatusPill status={p.status} />
+                    </div>
+                  </div>
+                  <div className="flex flex-none flex-col items-end">
+                    <span className="text-sm font-semibold text-foreground">
+                      {p.started ? <ToPar value={p.total} /> : <span className="text-muted">—</span>}
+                    </span>
+                    <span className="text-xs text-muted">
+                      {p.rank > 0 ? `${ordinal(p.rank)} / ${p.entrants}` : `${p.entrants} entrants`}
+                    </span>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-foreground">Pools</h2>
+        <h2 className="text-sm font-semibold text-foreground">All pools</h2>
         {!pools || pools.length === 0 ? (
           <div className="card p-6">
             <p className="hint">No pools yet.</p>
@@ -66,4 +169,10 @@ export default async function Home() {
       </div>
     </div>
   );
+}
+
+function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }

@@ -52,8 +52,7 @@ export default async function RootLayout({
           className="sticky top-0 z-10 flex items-center justify-between border-b px-5 py-3.5 backdrop-blur"
           style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--background) 80%, transparent)" }}
         >
-          <Link href="/" className="flex items-center gap-2 font-semibold text-foreground">
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent text-sm">⛳</span>
+          <Link href="/" className="font-semibold tracking-tight text-foreground">
             Golf Pool
           </Link>
           {user ? (

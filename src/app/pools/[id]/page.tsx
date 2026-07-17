@@ -215,54 +215,31 @@ export default async function PoolPage({
         </div>
       )}
 
-      {myEntry && (
-        <p className="hint -mt-2">
-          Your team is a fixed set of golfers — odds or tier changes never affect
-          your picks or your score.
-        </p>
-      )}
-
       <PoolTabs
         standings={
-          <div className="flex flex-col gap-2">
-            {showLiveRefresh && (
-              <div className="mb-1">
-                <LiveRefresh live={isLive} />
-              </div>
-            )}
+          <div className="flex flex-col gap-3">
+            {showLiveRefresh && <LiveRefresh />}
             {!started && (
-              <div className="rounded-lg border px-4 py-3 text-sm" style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--accent) 6%, transparent)" }}>
-                <span className="font-medium text-foreground">Not started yet.</span>{" "}
-                <span className="text-muted">
-                  Scores appear once {pool.tournaments?.name} tees off. Standings sort
-                  by lowest combined score to par.
-                </span>
-              </div>
+              <p className="text-sm text-muted">
+                Not started — scores appear once play begins.
+              </p>
             )}
             {leaderboard.length === 0 ? (
-              <div className="card p-6">
-                <p className="hint">No entries yet — be the first to join.</p>
-              </div>
+              <p className="text-sm text-muted">No entries yet.</p>
             ) : (
-              <>
-                <span className="text-xs text-muted">Tap a row to see golfer scores.</span>
-                <Leaderboard
-                  entries={leaderboard}
-                  currentUserId={user?.id}
-                  started={started}
-                  countingPicks={pool.counting_picks}
-                  positions={Object.fromEntries(positions)}
-                />
-              </>
+              <Leaderboard
+                entries={leaderboard}
+                currentUserId={user?.id}
+                started={started}
+                countingPicks={pool.counting_picks}
+                positions={Object.fromEntries(positions)}
+              />
             )}
           </div>
         }
         field={
-          <div className="flex flex-col gap-2">
-            <span className="text-xs text-muted">
-              {started ? "Live tournament leaderboard" : "Full field ranked by odds"} ·{" "}
-              {field.length} golfers
-            </span>
+          <div className="flex flex-col gap-3">
+            <span className="text-sm text-muted">{field.length} player field</span>
             <GolfLeaderboard golfers={field} started={started} showTier />
           </div>
         }

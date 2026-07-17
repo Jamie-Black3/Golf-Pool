@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 const INTERVAL_MS = 120_000; // 2 minutes
 
-export function LiveRefresh({ live }: { live: boolean }) {
+export function LiveRefresh() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
 
@@ -33,19 +33,13 @@ export function LiveRefresh({ live }: { live: boolean }) {
   }, [refresh]);
 
   return (
-    <div className="flex items-center gap-2 text-xs text-muted">
-      <span className="flex items-center gap-1.5">
-        <span className={`h-1.5 w-1.5 rounded-full ${live ? "animate-pulse bg-red-500" : "bg-amber-500"}`} />
-        {live ? "Live · auto-updates every 2 min" : "Waiting for tee-off · checking every 2 min"}
-      </span>
-      <button
-        type="button"
-        onClick={refresh}
-        disabled={busy}
-        className="underline transition-colors hover:text-foreground disabled:opacity-50"
-      >
-        {busy ? "Updating…" : "Refresh now"}
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={refresh}
+      disabled={busy}
+      className="btn btn-secondary w-fit px-3 py-1.5 text-sm"
+    >
+      {busy ? "Refreshing…" : "Refresh now"}
+    </button>
   );
 }

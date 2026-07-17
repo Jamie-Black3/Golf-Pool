@@ -97,23 +97,13 @@ export default async function Home() {
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 px-4 py-12">
-      <div className="flex flex-col items-start gap-4 rounded-2xl border bg-surface p-8" style={{ borderColor: "var(--border)" }}>
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent text-xl">⛳</div>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Golf Pool</h1>
-          <p className="mt-1 max-w-md text-muted">
-            Draft golfers by tier, track live tournament scores, and see who&apos;s
-            leading — lowest combined score to par wins.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <Link href={user ? "/pools/new" : "/login"} className="btn btn-primary">
-            {user ? "Create a pool" : "Sign in to start"}
-          </Link>
-          <Link href="/leaderboard" className="btn btn-secondary">
-            Leaderboard
-          </Link>
-        </div>
+      <div className="flex flex-wrap gap-3">
+        <Link href={user ? "/pools/new" : "/login"} className="btn btn-primary">
+          {user ? "Create a pool" : "Sign in"}
+        </Link>
+        <Link href="/leaderboard" className="btn btn-secondary">
+          Leaderboard
+        </Link>
       </div>
 
       {myPools.length > 0 && (

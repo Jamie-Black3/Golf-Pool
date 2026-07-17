@@ -11,10 +11,7 @@ export default async function LoginPage({
   return (
     <div className="flex flex-1 items-center justify-center px-4 py-16">
       <div className="card w-full max-w-sm p-8">
-        <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-lg">⛳</div>
-          <h1 className="text-lg font-semibold text-foreground">Golf Pool</h1>
-        </div>
+        <h1 className="mb-6 text-lg font-semibold tracking-tight text-foreground">Golf Pool</h1>
 
         {error && (
           <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-400">
@@ -59,10 +56,6 @@ export default async function LoginPage({
               className="btn btn-secondary flex-1"
             />
           </div>
-          <p className="mt-1 text-center text-xs text-muted">
-            New here? Enter an account name, email, and password, then tap Sign up —
-            you&apos;ll be signed in automatically.
-          </p>
         </form>
       </div>
     </div>

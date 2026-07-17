@@ -104,9 +104,14 @@ export default async function Home() {
             leading — lowest combined score to par wins.
           </p>
         </div>
-        <Link href={user ? "/pools/new" : "/login"} className="btn btn-primary">
-          {user ? "Create a pool" : "Sign in to start"}
-        </Link>
+        <div className="flex flex-wrap gap-3">
+          <Link href={user ? "/pools/new" : "/login"} className="btn btn-primary">
+            {user ? "Create a pool" : "Sign in to start"}
+          </Link>
+          <Link href="/leaderboard" className="btn btn-secondary">
+            Leaderboard
+          </Link>
+        </div>
       </div>
 
       {myPools.length > 0 && (

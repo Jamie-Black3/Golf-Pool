@@ -29,7 +29,7 @@ export function PoolTabs({
             }`}
             style={tab === t ? { background: "var(--accent)" } : undefined}
           >
-            {t === "standings" ? "Standings" : "Field & odds"}
+            {t === "standings" ? "Pool standings" : "Leaderboard"}
           </button>
         ))}
       </div>

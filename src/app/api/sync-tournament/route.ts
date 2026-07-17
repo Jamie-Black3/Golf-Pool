@@ -16,6 +16,23 @@ function parseToPar(score: string | undefined): number | null {
   return null;
 }
 
+// From ESPN per-round linescores, figure out which round the golfer is on and
+// how many holes they've completed in it. ESPN's per-hole array only contains
+// holes actually played, so its length is "thru".
+function parseProgress(linescores: unknown): { round: number | null; thru: number | null } {
+  if (!Array.isArray(linescores) || linescores.length === 0) {
+    return { round: null, thru: null };
+  }
+  const latest = linescores[linescores.length - 1] as {
+    period?: number;
+    linescores?: { value?: number | null }[];
+  };
+  const holes = Array.isArray(latest?.linescores)
+    ? latest.linescores.filter((h) => h.value !== null && h.value !== undefined).length
+    : null;
+  return { round: latest?.period ?? linescores.length, thru: holes };
+}
+
 function mapStatus(state: string): string {
   if (state === "pre") return "upcoming";
   if (state === "in") return "live";
@@ -97,16 +114,21 @@ export async function GET(request: NextRequest) {
     (existing ?? []).map((p) => [p.espn_athlete_id, p.odds_rank])
   );
 
-  const players = sorted.map((c, i) => ({
-    tournament_id: tournament.id,
-    espn_athlete_id: c.id,
-    name: c.athlete?.displayName ?? "Unknown",
-    // Field order as a placeholder rank until /api/sync-odds sets a real one.
-    odds_rank: existingRanks.get(c.id) ?? i + 1,
-    to_par: parseToPar(c.score),
-    status: c.status?.type?.description ?? "active",
-    updated_at: new Date().toISOString(),
-  }));
+  const players = sorted.map((c, i) => {
+    const { round, thru } = parseProgress(c.linescores);
+    return {
+      tournament_id: tournament.id,
+      espn_athlete_id: c.id,
+      name: c.athlete?.displayName ?? "Unknown",
+      // Field order as a placeholder rank until /api/sync-odds sets a real one.
+      odds_rank: existingRanks.get(c.id) ?? i + 1,
+      to_par: parseToPar(c.score),
+      status: c.status?.type?.description ?? "active",
+      round,
+      thru,
+      updated_at: new Date().toISOString(),
+    };
+  });
 
   const { error: playersError } = await supabase
     .from("golf_players")

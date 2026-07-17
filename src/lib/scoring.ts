@@ -2,7 +2,7 @@
 
 // Penalty (strokes) added to a golfer who misses the cut, representing the two
 // weekend rounds they don't play.
-export const CUT_PENALTY = 8;
+export const CUT_PENALTY = 16;
 
 export function isCut(status: string | null | undefined): boolean {
   return !!status && /\b(cut|mc|withdraw|wd|dq|disq)/i.test(status);

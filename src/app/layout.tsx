@@ -58,6 +58,9 @@ export default async function RootLayout({
           </Link>
           {user ? (
             <div className="flex items-center gap-4 text-sm">
+              <Link href="/leaderboard" className="text-muted transition-colors hover:text-foreground">
+                Leaderboard
+              </Link>
               {isAdmin && (
                 <Link href="/admin" className="text-muted transition-colors hover:text-foreground">
                   Admin

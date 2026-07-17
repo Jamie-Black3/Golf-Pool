@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { BackLink, PageHeader, StatusPill, ToPar, OddsLabel } from "@/components/ui";
+import { BackLink, PageHeader, StatusPill } from "@/components/ui";
+import { GolfLeaderboard } from "@/components/GolfLeaderboard";
 import { joinPool, setPoolLock } from "../actions";
 import { scoreEntry } from "@/lib/scoring";
 import { Leaderboard } from "./Leaderboard";
@@ -27,6 +28,8 @@ type FieldRow = {
     win_prob: number | null;
     to_par: number | null;
     status: string | null;
+    thru: number | null;
+    round: number | null;
   } | null;
 };
 
@@ -64,7 +67,7 @@ export default async function PoolPage({
 
   const { data: fieldRows } = await supabase
     .from("pool_tier_assignments")
-    .select("tier_number, golf_players(id, name, odds_rank, win_prob, to_par, status)")
+    .select("tier_number, golf_players(id, name, odds_rank, win_prob, to_par, status, thru, round)")
     .eq("pool_id", id)
     .returns<FieldRow[]>();
 
@@ -117,8 +120,7 @@ export default async function PoolPage({
 
   const field = (fieldRows ?? [])
     .filter((r) => r.golf_players)
-    .map((r) => ({ tier: r.tier_number, ...r.golf_players! }))
-    .sort((a, b) => (a.odds_rank ?? 9999) - (b.odds_rank ?? 9999));
+    .map((r) => ({ tier: r.tier_number, ...r.golf_players! }));
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-10">
@@ -246,41 +248,10 @@ export default async function PoolPage({
         field={
           <div className="flex flex-col gap-2">
             <span className="text-xs text-muted">
-              Full field ranked by betting odds · {field.length} golfers
+              {started ? "Live tournament leaderboard" : "Full field ranked by odds"} ·{" "}
+              {field.length} golfers
             </span>
-            <div className="card divide-y" style={{ borderColor: "var(--border)" }}>
-              {field.map((g) => {
-                const cut = g.status && /cut|withdraw|wd|dq/i.test(g.status);
-                return (
-                  <div
-                    key={g.id}
-                    className="flex items-center gap-3 px-4 py-2.5"
-                    style={{ borderColor: "var(--border)" }}
-                  >
-                    <span className="w-6 flex-none text-center text-xs font-semibold text-muted">
-                      {g.odds_rank}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                      {g.name}
-                      {cut && (
-                        <span className="ml-2 text-xs font-medium text-red-600 dark:text-red-400">
-                          {g.status}
-                        </span>
-                      )}
-                    </span>
-                    <span className="w-14 flex-none text-right">
-                      <OddsLabel prob={g.win_prob} />
-                    </span>
-                    <span className="flex-none rounded-full border px-2 py-0.5 text-xs font-medium text-muted" style={{ borderColor: "var(--border)" }}>
-                      T{g.tier}
-                    </span>
-                    <span className="w-10 flex-none text-right">
-                      {started ? <ToPar value={g.to_par ?? 0} /> : <span className="text-muted">—</span>}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+            <GolfLeaderboard golfers={field} started={started} showTier />
           </div>
         }
       />

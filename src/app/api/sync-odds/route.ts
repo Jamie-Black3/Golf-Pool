@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 function normalizeName(name: string): string {
   return name
@@ -60,6 +61,24 @@ function americanOddsToProbability(price: number): number {
 }
 
 export async function GET() {
+  // Admin-only: this spends limited odds-API calls, so don't let just anyone
+  // trigger it.
+  const authed = await createClient();
+  const {
+    data: { user },
+  } = await authed.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { data: profile } = await authed
+    .from("profiles")
+    .select("is_admin")
+    .eq("id", user.id)
+    .single<{ is_admin: boolean }>();
+  if (!profile?.is_admin) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "ODDS_API_KEY not set" }, { status: 500 });

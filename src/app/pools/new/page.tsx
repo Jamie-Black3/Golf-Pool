@@ -16,10 +16,18 @@ export default async function NewPoolPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: tournaments } = await supabase
-    .from("tournaments")
-    .select("id, name, status")
-    .order("start_date", { ascending: false });
+  const [{ data: tournaments }, { data: myPools }] = await Promise.all([
+    supabase
+      .from("tournaments")
+      .select("id, name, status")
+      .order("start_date", { ascending: false }),
+    supabase
+      .from("pools")
+      .select("id, name")
+      .eq("owner_id", user.id)
+      .order("created_at", { ascending: false })
+      .returns<{ id: string; name: string }[]>(),
+  ]);
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-4 py-10">
@@ -59,12 +67,31 @@ export default async function NewPoolPage({
             )}
           </div>
 
+          {myPools && myPools.length > 0 && (
+            <div>
+              <label className="label">Copy setup from (optional)</label>
+              <select name="copyFromPoolId" defaultValue="" className="input">
+                <option value="">Start fresh</option>
+                {myPools.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <p className="hint mt-1.5">
+                Reuses another pool&apos;s tiers, per-tier picks, and scoring — just
+                for setup. No entrants are copied. Tier sizes auto-fit this
+                tournament&apos;s field.
+              </p>
+            </div>
+          )}
+
           <div>
             <label className="label">Number of tiers</label>
             <input name="tierCount" type="number" min={1} max={15} defaultValue={4} required className="input max-w-28" />
             <p className="hint mt-1.5">
-              Golfers split into this many odds-ranked tiers. You&apos;ll fine-tune
-              sizes and per-tier picks on the next screen (max 15 picks total).
+              Ignored if you copy a setup above. Otherwise, golfers split into this
+              many odds-ranked tiers — fine-tune sizes and per-tier picks next.
             </p>
           </div>
 

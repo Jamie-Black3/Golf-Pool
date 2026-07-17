@@ -49,7 +49,7 @@ export async function createPool(formData: FormData) {
 
   const tournamentId = formData.get("tournamentId") as string;
   const name = ((formData.get("name") as string) || "").trim();
-  const tierCount = Math.min(15, Math.max(1, parseInt(formData.get("tierCount") as string, 10) || 4));
+  const copyFromPoolId = (formData.get("copyFromPoolId") as string) || "";
 
   if (!name || !tournamentId) {
     redirect(`/pools/new?error=${encodeURIComponent("Pool name and tournament are required")}`);
@@ -62,8 +62,35 @@ export async function createPool(formData: FormData) {
 
   const total = fieldSize ?? 0;
 
-  // Default one pick per tier, but never exceed the total pick cap.
-  const defaultPicks = Math.min(tierCount, MAX_PICKS);
+  // Determine tier structure: either copied from an existing pool, or a default.
+  let tierCount = Math.min(15, Math.max(1, parseInt(formData.get("tierCount") as string, 10) || 4));
+  let picksPerTier: number[]; // picks_allowed for each tier
+  let countingPicks: number | null = null;
+
+  if (copyFromPoolId) {
+    const { data: src } = await supabase
+      .from("pools")
+      .select("counting_picks, pool_tiers(tier_number, picks_allowed)")
+      .eq("id", copyFromPoolId)
+      .single<{
+        counting_picks: number | null;
+        pool_tiers: { tier_number: number; picks_allowed: number }[];
+      }>();
+    const srcTiers = (src?.pool_tiers ?? []).sort((a, b) => a.tier_number - b.tier_number);
+    if (srcTiers.length > 0) {
+      tierCount = srcTiers.length;
+      picksPerTier = srcTiers.map((t) => t.picks_allowed);
+      countingPicks = src?.counting_picks ?? null;
+    } else {
+      picksPerTier = Array.from({ length: tierCount }, () => 1);
+    }
+  } else {
+    // Default: one pick per tier, capped.
+    const defaultPicks = Math.min(tierCount, MAX_PICKS);
+    picksPerTier = Array.from({ length: tierCount }, (_, i) => (i < defaultPicks ? 1 : 0));
+  }
+
+  const picksPerEntry = picksPerTier.reduce((s, p) => s + p, 0);
 
   const { data: pool, error } = await supabase
     .from("pools")
@@ -72,7 +99,8 @@ export async function createPool(formData: FormData) {
       name,
       owner_id: user.id,
       tier_count: tierCount,
-      picks_per_entry: defaultPicks,
+      picks_per_entry: picksPerEntry,
+      counting_picks: countingPicks,
     })
     .select()
     .single();
@@ -83,14 +111,15 @@ export async function createPool(formData: FormData) {
     );
   }
 
-  // Even odds-ordered split by default; one pick per tier (up to the cap).
+  // Even odds-ordered size split (sizes auto-fit this tournament's field);
+  // per-tier picks come from the default or the copied pool.
   const baseSize = Math.floor(total / tierCount);
   const remainder = total % tierCount;
   const tierRows = Array.from({ length: tierCount }, (_, i) => ({
     pool_id: pool.id,
     tier_number: i + 1,
     tier_size: baseSize + (i < remainder ? 1 : 0),
-    picks_allowed: i < defaultPicks ? 1 : 0,
+    picks_allowed: picksPerTier[i] ?? 0,
   }));
 
   await supabase.from("pool_tiers").insert(tierRows);

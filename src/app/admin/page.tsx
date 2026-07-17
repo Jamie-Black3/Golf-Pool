@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { BackLink, PageHeader } from "@/components/ui";
 import { deletePool } from "./actions";
+import { AdminSync } from "./AdminSync";
 
 type Pool = {
   id: string;
@@ -35,6 +36,8 @@ export default async function AdminPage() {
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-10">
       <BackLink href="/">Back home</BackLink>
       <PageHeader title="Admin" subtitle="Manage every pool on the site." />
+
+      <AdminSync />
 
       {!pools || pools.length === 0 ? (
         <div className="card p-6">

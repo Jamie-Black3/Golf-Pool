@@ -3,13 +3,19 @@ import { createClient } from "@/lib/supabase/server";
 import { BackLink, PageHeader, StatusPill } from "@/components/ui";
 import { GolfLeaderboard } from "@/components/GolfLeaderboard";
 import { joinPool, setPoolLock } from "../actions";
-import { scoreEntry } from "@/lib/scoring";
+import { scoreEntry, computePositions } from "@/lib/scoring";
 import { Leaderboard } from "./Leaderboard";
 import { PoolTabs } from "./PoolTabs";
 import { LiveRefresh } from "./LiveRefresh";
 
 type EntryPick = {
-  golf_players: { name: string; to_par: number | null; status: string | null } | null;
+  golf_players: {
+    id: string;
+    name: string;
+    to_par: number | null;
+    status: string | null;
+    thru: number | null;
+  } | null;
 };
 
 type Entry = {
@@ -41,35 +47,35 @@ export default async function PoolPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { data: pool } = await supabase
-    .from("pools")
-    .select("id, name, owner_id, picks_per_entry, counting_picks, locked_at, tournaments(name, status, start_date, end_date)")
-    .eq("id", id)
-    .single<{
-      id: string;
-      name: string;
-      owner_id: string;
-      picks_per_entry: number;
-      counting_picks: number | null;
-      locked_at: string | null;
-      tournaments: { name: string; status: string; start_date: string | null; end_date: string | null } | null;
-    }>();
-
-  const { data: entries } = await supabase
-    .from("pool_entries")
-    .select("id, user_id, profiles(account_name), entry_picks(golf_players(name, to_par, status))")
-    .eq("pool_id", id)
-    .returns<Entry[]>();
-
-  const { data: fieldRows } = await supabase
-    .from("pool_tier_assignments")
-    .select("tier_number, golf_players(id, name, odds_rank, win_prob, to_par, status, thru, round)")
-    .eq("pool_id", id)
-    .returns<FieldRow[]>();
+  // These four don't depend on each other — run them in parallel.
+  const [{ data: userData }, { data: pool }, { data: entries }, { data: fieldRows }] =
+    await Promise.all([
+      supabase.auth.getUser(),
+      supabase
+        .from("pools")
+        .select("id, name, owner_id, picks_per_entry, counting_picks, locked_at, tournaments(name, status, start_date, end_date)")
+        .eq("id", id)
+        .single<{
+          id: string;
+          name: string;
+          owner_id: string;
+          picks_per_entry: number;
+          counting_picks: number | null;
+          locked_at: string | null;
+          tournaments: { name: string; status: string; start_date: string | null; end_date: string | null } | null;
+        }>(),
+      supabase
+        .from("pool_entries")
+        .select("id, user_id, profiles(account_name), entry_picks(golf_players(id, name, to_par, status, thru))")
+        .eq("pool_id", id)
+        .returns<Entry[]>(),
+      supabase
+        .from("pool_tier_assignments")
+        .select("tier_number, golf_players(id, name, odds_rank, win_prob, to_par, status, thru, round)")
+        .eq("pool_id", id)
+        .returns<FieldRow[]>(),
+    ]);
+  const user = userData.user;
 
   if (!pool) {
     return (
@@ -94,7 +100,9 @@ export default async function PoolPage({
     .map((entry) => {
       const rawPicks = entry.entry_picks
         .map((p) => p.golf_players)
-        .filter((g): g is { name: string; to_par: number | null; status: string | null } => !!g);
+        .filter(
+          (g): g is { id: string; name: string; to_par: number | null; status: string | null; thru: number | null } => !!g
+        );
       const { total, picks } = scoreEntry(rawPicks, pool.counting_picks);
       return {
         id: entry.id,
@@ -121,6 +129,9 @@ export default async function PoolPage({
   const field = (fieldRows ?? [])
     .filter((r) => r.golf_players)
     .map((r) => ({ tier: r.tier_number, ...r.golf_players! }));
+
+  // Golf leaderboard position (with ties) for each golfer, to show on picks.
+  const positions = computePositions(field);
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-10">
@@ -240,6 +251,7 @@ export default async function PoolPage({
                   currentUserId={user?.id}
                   started={started}
                   countingPicks={pool.counting_picks}
+                  positions={Object.fromEntries(positions)}
                 />
               </>
             )}

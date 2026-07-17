@@ -4,7 +4,13 @@ import { useState } from "react";
 import { ToPar } from "@/components/ui";
 import { CUT_PENALTY, type ScoredPick } from "@/lib/scoring";
 
-type Pick = ScoredPick<{ name: string; to_par: number | null; status: string | null }>;
+type Pick = ScoredPick<{
+  id: string;
+  name: string;
+  to_par: number | null;
+  status: string | null;
+  thru: number | null;
+}>;
 type Entry = {
   id: string;
   userId: string;
@@ -13,16 +19,26 @@ type Entry = {
   total: number;
 };
 
+function thruLabel(p: Pick, started: boolean): string {
+  if (p.cut) return "CUT";
+  if (!started) return "—";
+  if (p.thru === 18) return "F";
+  if (p.thru && p.thru > 0) return `thru ${p.thru}`;
+  return "—";
+}
+
 export function Leaderboard({
   entries,
   currentUserId,
   started,
   countingPicks,
+  positions,
 }: {
   entries: Entry[];
   currentUserId?: string;
   started: boolean;
   countingPicks: number | null;
+  positions: Record<string, string>;
 }) {
   const [open, setOpen] = useState<Set<string>>(
     new Set(entries.filter((e) => e.userId === currentUserId).map((e) => e.id))
@@ -94,26 +110,34 @@ export function Leaderboard({
                     {ordered.map((p, idx) => (
                       <li
                         key={idx}
-                        className={`flex items-center justify-between gap-3 py-1.5 text-sm ${
+                        className={`flex items-center gap-3 py-1.5 text-sm ${
                           p.counts ? "" : "opacity-45"
                         }`}
                       >
-                        <span className="flex min-w-0 items-center gap-2 truncate">
+                        <span className="w-9 flex-none text-xs font-medium tabular-nums text-muted">
+                          {p.cut ? "CUT" : started ? positions[p.id] ?? "—" : "—"}
+                        </span>
+                        <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
                           <span className="truncate text-foreground">{p.name}</span>
                           {p.cut && (
                             <span className="flex-none text-xs font-medium text-red-600 dark:text-red-400">
-                              CUT +{CUT_PENALTY}
+                              +{CUT_PENALTY}
                             </span>
                           )}
                           {!p.counts && (
                             <span className="flex-none text-xs text-muted">dropped</span>
                           )}
                         </span>
-                        {started ? (
-                          <ToPar value={p.effective} />
-                        ) : (
-                          <span className="text-muted">—</span>
-                        )}
+                        <span className="w-16 flex-none text-right text-xs text-muted tabular-nums">
+                          {thruLabel(p, started)}
+                        </span>
+                        <span className="w-10 flex-none text-right">
+                          {started ? (
+                            <ToPar value={p.effective} />
+                          ) : (
+                            <span className="text-muted">—</span>
+                          )}
+                        </span>
                       </li>
                     ))}
                   </ul>

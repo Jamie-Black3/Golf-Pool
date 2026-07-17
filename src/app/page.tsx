@@ -21,17 +21,19 @@ type PoolEntry = {
 
 export default async function Home() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
-  const { data: pools } = await supabase
-    .from("pools")
-    .select("id, name, tournaments(name, status)")
-    .order("created_at", { ascending: false })
-    .returns<
-      { id: string; name: string; tournaments: { name: string; status: string } | null }[]
-    >();
+  // User and the all-pools list are independent — fetch together.
+  const [{ data: userData }, { data: pools }] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase
+      .from("pools")
+      .select("id, name, tournaments(name, status)")
+      .order("created_at", { ascending: false })
+      .returns<
+        { id: string; name: string; tournaments: { name: string; status: string } | null }[]
+      >(),
+  ]);
+  const user = userData.user;
 
   // "My Pools" — pools the signed-in user has an entry in, with rank + score.
   let myPools: {

@@ -22,6 +22,27 @@ export type ScoredPick<T> = T & {
   counts: boolean;
 };
 
+// Standard golf leaderboard positions (with ties as "T5" etc.), keyed by golfer
+// id. Cut/withdrawn or not-yet-scored golfers are omitted.
+export function computePositions<
+  T extends { id: string; to_par: number | null; status: string | null },
+>(golfers: T[]): Map<string, string> {
+  const active = golfers
+    .filter((g) => !isCut(g.status) && g.to_par !== null)
+    .sort((a, b) => (a.to_par ?? 0) - (b.to_par ?? 0));
+
+  const pos = new Map<string, string>();
+  let i = 0;
+  while (i < active.length) {
+    let j = i;
+    while (j < active.length && active[j].to_par === active[i].to_par) j++;
+    const label = (j - i > 1 ? "T" : "") + (i + 1);
+    for (let k = i; k < j; k++) pos.set(active[k].id, label);
+    i = j;
+  }
+  return pos;
+}
+
 // Score an entry: keep only the best `countBest` picks (lowest effective
 // scores); the rest are dropped. `countBest` null/<=0 means all picks count.
 // Returns the total and each pick flagged with whether it counts.
